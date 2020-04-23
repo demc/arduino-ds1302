@@ -7,20 +7,23 @@
 #ifndef DS1302_H_
 #define DS1302_H_
 
+#include <Arduino.h>
 #include <stdint.h>
+
+enum Day {
+SUNDAY    = 1,
+MONDAY    = 2,
+TUESDAY   = 3,
+WEDNESDAY = 4,
+THURSDAY  = 5,
+FRIDAY    = 6,
+SATURDAY  = 7
+};
 
 // Class representing a particular time and date.
 class Time {
  public:
-  enum Day {
-    kSunday    = 1,
-    kMonday    = 2,
-    kTuesday   = 3,
-    kWednesday = 4,
-    kThursday  = 5,
-    kFriday    = 6,
-    kSaturday  = 7
-  };
+
 
   // Creates a Time object with a given time.
   //
@@ -31,18 +34,27 @@ class Time {
   //   hr: hour. Range: {0, ..., 23}.
   //   min: minutes. Range: {0, ..., 59}.
   //   sec: seconds. Range: {0, ..., 59}.
-  //   day: day of the week. Sunday is 1. Range: {1, ..., 7}.
+  Time();
+ 
+  Time(const char *date, const char *time);
+
   Time(uint16_t yr, uint8_t mon, uint8_t date,
-       uint8_t hr, uint8_t min, uint8_t sec,
-       Day day);
+       uint8_t hr, uint8_t min, uint8_t sec);
+
+  Day getDayOfWeek();
+
+  String toString();
 
   uint8_t sec;
   uint8_t min;
-  uint8_t hr;
+  uint8_t hour;
   uint8_t date;
-  uint8_t mon;
-  Day day;
-  uint16_t yr;
+  uint8_t month;
+  uint16_t year;
+
+ private:
+  void init(uint16_t yr, uint8_t mon, uint8_t date,
+	    uint8_t hr, uint8_t min, uint8_t sec);
 };
 
 // An interface to the Dallas Semiconductor DS1302 Real Time Clock (RTC) chip.
@@ -96,7 +108,7 @@ class DS1302 {
   //
   // Returns:
   //   Current time as Time object.
-  Time time();
+  Time now();
 
   // Sets the time and date to the instant specified in a given Time object.
   //
@@ -106,7 +118,7 @@ class DS1302 {
   //
   // Args:
   //   t: Time instant.
-  void time(Time t);
+  void setTimeOnChip(Time t);
 
   // Writes a byte to RAM.
   //

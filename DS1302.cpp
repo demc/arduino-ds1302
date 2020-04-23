@@ -74,18 +74,104 @@ uint8_t hourFromRegisterValue(const uint8_t value) {
   return (value & 15) + adj;
 }
 
+const uint8_t daysInMonth[] PROGMEM = {31, 28, 31, 30, 31, 30,
+                                       31, 31, 30, 31, 30};
+
+static uint8_t conv2d(const char *p) {
+  uint8_t v = 0;
+  if ('0' <= *p && *p <= '9')
+    v = *p - '0';
+  return 10 * v + *++p - '0';
+}
+
+static uint16_t date2days(uint16_t y, uint8_t m, uint8_t d) {
+  if (y >= 2000)
+    y -= 2000;
+  uint16_t days = d;
+  for (uint8_t i = 1; i < m; ++i)
+    days += daysInMonth[i - 1];
+  if (m > 2 && y % 4 == 0)
+    ++days;
+  return days + 365 * y + (y + 3) / 4 - 1;
+}
+
 }  // namespace
 
+Time::Time()
+{
+}
+
+Time::Time(const char *date, const char *time)
+{
+  uint16_t year = 2000 + conv2d(date + 9);
+  uint8_t m;
+
+  // Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec
+  switch (date[0]) {
+  case 'J':
+    m = (date[1] == 'a') ? 1 : ((date[2] == 'n') ? 6 : 7);
+    break;
+  case 'F':
+    m = 2;
+    break;
+  case 'A':
+    m = date[2] == 'r' ? 4 : 8;
+    break;
+  case 'M':
+    m = date[2] == 'r' ? 3 : 5;
+    break;
+  case 'S':
+    m = 9;
+    break;
+  case 'O':
+    m = 10;
+    break;
+  case 'N':
+    m = 11;
+    break;
+  case 'D':
+    m = 12;
+    break;
+  }
+
+  uint8_t d = conv2d(date + 4);
+  uint8_t hh = conv2d(time);
+  uint8_t mm = conv2d(time + 3);
+  uint8_t ss = conv2d(time + 6);
+
+  init(year, m, d, hh, mm, ss);
+}
+
 Time::Time(const uint16_t yr, const uint8_t mon, const uint8_t date,
-           const uint8_t hr, const uint8_t min, const uint8_t sec,
-           const Day day) {
-  this->yr   = yr;
-  this->mon  = mon;
+           const uint8_t hr, const uint8_t min, const uint8_t sec)
+{
+  init(yr, mon, date, hr, min, sec);
+}
+
+void Time::init(const uint16_t yr, const uint8_t mon, const uint8_t date,
+                const uint8_t hr, const uint8_t min, const uint8_t sec)
+{
+  this->year   = yr;
+  this->month  = mon;
   this->date = date;
-  this->hr   = hr;
+  this->hour   = hr;
   this->min  = min;
   this->sec  = sec;
-  this->day  = day;
+}
+
+Day Time::getDayOfWeek()
+{
+  uint16_t d = date2days(this->year, this->month, this->date);
+  return (d + 6) % 7;
+}
+
+String Time::toString()
+{
+  char buffer[20];
+  sprintf(buffer, "%d-%02d-%02d %02d:%02d:%02d", 
+		  year, month, date, hour, min, sec);
+
+  return String(buffer);
 }
 
 DS1302::DS1302(const uint8_t ce_pin, const uint8_t io_pin,
@@ -169,22 +255,25 @@ void DS1302::halt(const bool enable) {
   writeRegister(kSecondReg, sec);
 }
 
-Time DS1302::time() {
+Time DS1302::now() {
   const SPISession s(ce_pin_, io_pin_, sclk_pin_);
 
-  Time t(2099, 1, 1, 0, 0, 0, Time::kSunday);
+  Time t(2099, 1, 1, 0, 0, 0);
   writeOut(kClockBurstRead, true);
   t.sec = bcdToDec(readIn() & 0x7F);
   t.min = bcdToDec(readIn());
-  t.hr = hourFromRegisterValue(readIn());
+  t.hour = hourFromRegisterValue(readIn());
   t.date = bcdToDec(readIn());
-  t.mon = bcdToDec(readIn());
-  t.day = static_cast<Time::Day>(bcdToDec(readIn()));
-  t.yr = 2000 + bcdToDec(readIn());
+  t.month = bcdToDec(readIn());
+  // read day from DS1302 to be consistent
+  readIn();
+  //t.day = static_cast<Time::Day>(bcdToDec(readIn()));
+  t.year = 2000 + bcdToDec(readIn());
   return t;
 }
 
-void DS1302::time(const Time t) {
+
+void DS1302::setTimeOnChip(const Time t) {
   // We want to maintain the Clock Halt flag if it is set.
   const uint8_t ch_value = readRegister(kSecondReg) & 0x80;
 
@@ -193,11 +282,11 @@ void DS1302::time(const Time t) {
   writeOut(kClockBurstWrite);
   writeOut(ch_value | decToBcd(t.sec));
   writeOut(decToBcd(t.min));
-  writeOut(decToBcd(t.hr));
+  writeOut(decToBcd(t.hour));
   writeOut(decToBcd(t.date));
-  writeOut(decToBcd(t.mon));
-  writeOut(decToBcd(static_cast<uint8_t>(t.day)));
-  writeOut(decToBcd(t.yr - 2000));
+  writeOut(decToBcd(t.month));
+  writeOut(decToBcd(static_cast<uint8_t>(t.getDayOfWeek())));
+  writeOut(decToBcd(t.year - 2000));
   // All clock registers *and* the WP register have to be written for the time
   // to be set.
   writeOut(0);  // Write protection register.
